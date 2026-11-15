@@ -1,4 +1,4 @@
-/* holm-live-power-card — https://github.com/kaaribou/holm-live-power-card — licence MIT — v1.1.0 */
+/* holm-live-power-card — https://github.com/kaaribou/holm-live-power-card — licence MIT — v1.2.0 */
 // HOLM Live Power Card — la puissance de chaque appareil en direct, groupée, animée, entièrement réglable dans l'éditeur visuel.
 // Config :
 //   type: custom:holm-live-power-card
@@ -21,8 +21,13 @@
 //           icon: mdi:water-boiler
 //           max: 2500             # facultatif : sinon le pic des 7 derniers jours
 //           energy: sensor.xxx    # facultatif : sinon trouvé sur le même appareil
+//           parent: sensor.xxx    # facultatif : sous-appareil de cet appareil (affiché en retrait, pas compté deux fois)
+//           show_switch: true     # facultatif : bouton marche / arrêt
+//           switch: switch.xxx    # facultatif : sinon l'interrupteur du même appareil
+//           switch_confirm: false # facultatif : éteindre sans confirmation
+//   show_rest: true            # ligne « Reste non détaillé » sous un appareil qui a des sous-appareils
 (() => {
-  const VERSION = "1.1.0";
+  const VERSION = "1.2.0";
   const LANGS = ["fr", "en", "de", "es", "it", "nl", "pt", "pl"];
   // clé = texte français ; valeurs = en, de, es, it, nl, pt, pl
   const T = {
@@ -102,10 +107,24 @@
     "Affichage": ["Display", "Anzeige", "Visualización", "Visualizzazione", "Weergave", "Visualização", "Wyświetlanie"],
     "HOLM – Puissance en direct": ["HOLM – Live power", "HOLM – Live-Leistung", "HOLM – Potencia en directo", "HOLM – Potenza in diretta", "HOLM – Live vermogen", "HOLM – Potência em direto", "HOLM – Moc na żywo"],
     "La puissance de chaque appareil en direct, par groupes, animée": ["Each device's live power, in groups, animated", "Live-Leistung jedes Geräts, in Gruppen, animiert", "La potencia de cada dispositivo en directo, por grupos, animada", "La potenza di ogni dispositivo in diretta, per gruppi, animata", "Live vermogen per apparaat, in groepen, geanimeerd", "A potência de cada dispositivo em direto, por grupos, animada", "Moc każdego urządzenia na żywo, w grupach, animowana"],
+    "Reste non détaillé": ["Rest, not itemised", "Rest, nicht aufgeschlüsselt", "Resto sin detallar", "Resto non dettagliato", "Rest, niet uitgesplitst", "Resto não detalhado", "Reszta, nieszczegółowa"],
+    "Allumer": ["Turn on", "Einschalten", "Encender", "Accendi", "Aanzetten", "Ligar", "Włącz"],
+    "Éteindre": ["Turn off", "Ausschalten", "Apagar", "Spegni", "Uitzetten", "Desligar", "Wyłącz"],
+    "Éteindre ?": ["Turn off?", "Ausschalten?", "¿Apagar?", "Spegnere?", "Uitzetten?", "Desligar?", "Wyłączyć?"],
+    "Inclus dans (sous-appareil de)": ["Included in (sub-device of)", "Enthalten in (Untergerät von)", "Incluido en (subdispositivo de)", "Incluso in (sottodispositivo di)", "Inbegrepen in (subapparaat van)", "Incluído em (subdispositivo de)", "Zawarte w (podurządzenie)"],
+    "Aucun (appareil principal)": ["None (main device)", "Keins (Hauptgerät)", "Ninguno (dispositivo principal)", "Nessuno (dispositivo principale)", "Geen (hoofdapparaat)", "Nenhum (dispositivo principal)", "Brak (urządzenie główne)"],
+    "Bouton marche / arrêt": ["On / off button", "Ein-/Aus-Schalter", "Botón encendido / apagado", "Pulsante acceso / spento", "Aan/uit-knop", "Botão ligar / desligar", "Przycisk wł. / wył."],
+    "Interrupteur (auto si vide)": ["Switch (auto if empty)", "Schalter (automatisch, wenn leer)", "Interruptor (automático si vacío)", "Interruttore (automatico se vuoto)", "Schakelaar (automatisch indien leeg)", "Interruptor (automático se vazio)", "Przełącznik (automatycznie, jeśli puste)"],
+    "Confirmer avant d'éteindre": ["Confirm before turning off", "Vor dem Ausschalten bestätigen", "Confirmar antes de apagar", "Conferma prima di spegnere", "Bevestigen voor uitzetten", "Confirmar antes de desligar", "Potwierdź przed wyłączeniem"],
+    "Ligne « Reste non détaillé » sous les appareils parents": ["“Rest, not itemised” line under parent devices", "Zeile „Rest, nicht aufgeschlüsselt“ unter übergeordneten Geräten", "Línea «Resto sin detallar» bajo los dispositivos padre", "Riga «Resto non dettagliato» sotto i dispositivi padre", "Regel ‘Rest, niet uitgesplitst’ onder hoofdapparaten", "Linha «Resto não detalhado» sob os dispositivos principais", "Wiersz „Reszta, nieszczegółowa” pod urządzeniami nadrzędnymi"],
+    "Partie de {p} non mesurée par ses sous-appareils": ["Part of {p} not measured by its sub-devices", "Teil von {p}, der nicht von seinen Untergeräten gemessen wird", "Parte de {p} no medida por sus subdispositivos", "Parte di {p} non misurata dai suoi sottodispositivi", "Deel van {p} dat niet door de subapparaten wordt gemeten", "Parte de {p} não medida pelos seus subdispositivos", "Część {p} niemierzona przez podurządzenia"],
+    "Interrupteur indisponible": ["Switch unavailable", "Schalter nicht verfügbar", "Interruptor no disponible", "Interruttore non disponibile", "Schakelaar niet beschikbaar", "Interruptor indisponível", "Przełącznik niedostępny"],
   };
   const langOf = (hass, c) => { const l = String((c && c.language) || hass?.locale?.language || hass?.language || navigator.language || "en").toLowerCase().split(/[-_]/)[0]; return LANGS.includes(l) ? l : "en"; };
   const tr = (l, s) => (l === "fr" ? s : (T[s] && T[s][LANGS.indexOf(l) - 1]) || s);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // bouton marche / arrêt : demandé explicitement, ou implicite quand un interrupteur est indiqué
+  const hasSw = (d) => d.show_switch === true || (d.show_switch !== false && !!d.switch);
   const num = (v) => { const n = parseFloat(v); return isFinite(n) ? n : null; };
   const RANGES = [["6h", 6, "6 h"], ["24h", 24, "24 h"], ["48h", 48, "48 h"], ["7d", 168, "7 j"]];
   const SPIN = /fan|air-filter|air-purifier|hvac|turbine|pump|ventilat|washing-machine|tumble-dryer|dishwasher|robot-vacuum/;
@@ -127,7 +146,7 @@
       const groups = (Array.isArray(c.groups) && c.groups.length ? c.groups : [{ name: "", devices: c.devices || [] }])
         .map((g) => ({ ...g, devices: (g.devices || []).filter((d) => d && d.entity) }));
       this._c = { sort: "power", idle: "show", idle_threshold: 2, style: "fill", color: "gradient", columns: "auto",
-        show_total: true, show_sparkline: true, show_energy: true, sparkline_hours: 3, animation: true, ...c, groups };
+        show_total: true, show_sparkline: true, show_energy: true, show_rest: true, sparkline_hours: 3, animation: true, ...c, groups };
       this._key = "holm-lp-" + (c.title || "") + "-" + groups.map((g) => g.name).join("|");
       this._collapsed = new Set(ls.get(this._key) || []);
       this._shown = {};
@@ -163,6 +182,18 @@
       return Math.max(0, v);
     }
     _devs() { const out = []; this._c.groups.forEach((g, gi) => g.devices.forEach((d, di) => out.push({ ...d, gi, di, k: `${gi}-${di}`, color: d.color || PAL[out.length % PAL.length] }))); return out; }
+    // sous-appareils (#1) : un appareil dont `parent` désigne le capteur d'un autre appareil de la carte
+    _parentOf(d) { if (!d.parent || d.parent === d.entity) return null; return this._devs().find((x) => x.entity === d.parent && !x.parent) || null; }
+    _children(p) { return this._devs().filter((x) => x.parent === p.entity && x.entity !== p.entity); }
+    _switchEntity(d) {
+      if (!hasSw(d)) return null;
+      if (d.switch) return d.switch;
+      const ents = this._hass?.entities || {}, dev = ents[d.entity]?.device_id;
+      if (!dev) return null;
+      const doms = ["switch", "light", "fan", "input_boolean"];
+      const list = Object.values(ents).filter((e) => e.device_id === dev && doms.includes(e.entity_id.split(".")[0]) && !e.entity_category && !e.hidden_by && !e.disabled_by);
+      return (list.find((e) => e.entity_id.startsWith("switch.")) || list[0])?.entity_id || null;
+    }
     _name(d) { return d.name || this._hass?.states[d.entity]?.attributes.friendly_name || d.entity; }
     _icon(d) { return d.icon || this._hass?.states[d.entity]?.attributes.icon || "mdi:flash"; }
     _max(d) { const m = num(d.max); if (m) return m; const p = this._peak[d.entity]; return p ? this._niceMax(p) : Math.max(100, (this._power(d.entity) || 0) * 1.25); }
@@ -205,7 +236,8 @@
                   ${g.icon ? `<ha-icon icon="${esc(g.icon)}"></ha-icon>` : ""}<span class="gn">${esc(g.name || this._t("Appareils"))}</span>
                   <span class="gt" data-gt="${gi}"></span><ha-icon class="chev" icon="mdi:chevron-down"></ha-icon></button>` : ""}
                 <div class="rows" data-rows="${gi}">
-                  ${g.devices.map((d, di) => this._rowHtml({ ...d, gi, di, k: `${gi}-${di}` })).join("")}
+                  ${this._devs().filter((d) => d.gi === gi && !this._parentOf(d)).map((d) => this._rowHtml(d) + this._children(d).map((x) => this._rowHtml(x, true)).join("")
+                    + (this._children(d).length && c.show_rest !== false ? this._restHtml(d) : "")).join("")}
                   <div class="allidle" data-allidle="${gi}" hidden>${this._t("Tous au repos")}</div>
                 </div>
               </section>` : "").join("")}
@@ -217,14 +249,23 @@
       this._built = true;
       this._sig = "";
     }
-    _rowHtml(d) {
+    _restHtml(p) {
+      return `<div class="row child rest" data-k="${p.k}-rest" data-parent="${p.k}" title="${esc(this._t("Partie de {p} non mesurée par ses sous-appareils").replace("{p}", this._name(p)))}">
+        <div class="fill"><i class="grad"></i></div>
+        <span class="ic"><ha-icon icon="mdi:dots-horizontal-circle-outline"></ha-icon></span>
+        <div class="tx"><span class="nm">${esc(this._t("Reste non détaillé"))}</span><span class="sub"></span><div class="mbar"><i></i></div></div>
+        <span class="val">—</span>
+      </div>`;
+    }
+    _rowHtml(d, child) {
       const icon = this._icon(d);
-      return `<div class="row" data-k="${d.k}" data-entity="${esc(d.entity)}" style="--dc:${esc(d.color || "")}">
+      const sw = hasSw(d) ? `<button class="sw" data-sw="${d.k}" title="${esc(this._t("Allumer"))}"><ha-icon icon="mdi:power"></ha-icon><em>${esc(this._t("Éteindre ?"))}</em></button>` : "";
+      return `<div class="row${child ? " child" : ""}" data-k="${d.k}" data-entity="${esc(d.entity)}"${child ? ` data-parent="${this._parentOf(d)?.k}"` : ""} style="--dc:${esc(d.color || "")}">
         <div class="fill"><i class="grad"></i><i class="shine"></i></div>
         <span class="ic${SPIN.test(icon) ? " spin" : ""}"><ha-icon icon="${esc(icon)}"></ha-icon></span>
         <div class="tx"><span class="nm">${esc(this._name(d))}</span><span class="sub"></span><div class="mbar"><i></i></div></div>
         ${this._c.show_sparkline !== false ? `<svg class="spark" viewBox="0 0 100 30" preserveAspectRatio="none"><path class="sa"/><path class="sl"/></svg>` : ""}
-        <span class="val">—</span>
+        <span class="val">—</span>${sw}
       </div>`;
     }
 
@@ -233,7 +274,8 @@
       if (!this._built || !this._hass) return;
       const devs = this._devs();
       const vals = devs.map((d) => this._power(d.entity));
-      const sig = vals.join("|") + JSON.stringify(this._today) + (this._sparkAt || 0) + (this._peakAt || 0);
+      const swSt = devs.map((d) => { const e = this._switchEntity(d); return e ? this._hass.states[e]?.state : ""; });
+      const sig = vals.join("|") + swSt.join("|") + JSON.stringify(this._today) + (this._sparkAt || 0) + (this._peakAt || 0);
       if (!force && sig === this._sig) return;
       this._sig = sig;
       const thr = num(this._c.idle_threshold) ?? 2;
@@ -243,9 +285,17 @@
       devs.forEach((d, i) => {
         const r = this._rows[d.k]; if (!r) return;
         const v = vals[i], on = v !== null && v > thr;
-        if (v !== null) { total += v; gTot[d.gi] = (gTot[d.gi] || 0) + v; }
+        const isSub = !!this._parentOf(d);   // sous-appareil : déjà compté dans son parent
+        if (v !== null && !isSub) { total += v; gTot[d.gi] = (gTot[d.gi] || 0) + v; }
         if (on) active++;
-        items.push({ d, v: v ?? 0, on });
+        items.push({ d, v: v ?? 0, on, sub: isSub });
+        const swE = this._switchEntity(d), swB = r.querySelector(".sw");
+        if (swB) {
+          const ss = swE ? this._hass.states[swE] : null, ok = ss && ss.state !== "unavailable" && ss.state !== "unknown";
+          swB.classList.toggle("on", !!ok && ss.state === "on");
+          swB.disabled = !ok;
+          swB.title = !ok ? this._t("Interrupteur indisponible") : this._t(ss.state === "on" ? "Éteindre" : "Allumer");
+        }
         const max = this._max(d), p = Math.max(0, Math.min(1, (v || 0) / max));
         r.classList.toggle("on", on);
         r.classList.toggle("na", v === null);
@@ -260,14 +310,37 @@
         this._tween(r.querySelector(".val"), d.k, v);
         if (this._c.show_sparkline !== false) this._drawSpark(r, d, max);
       });
+      // lignes « Reste non détaillé » : parent − somme de ses sous-appareils
+      const restV = {};
+      items.filter((x) => !x.sub).forEach((x) => {
+        const kids = items.filter((y) => y.sub && y.d.parent === x.d.entity);
+        if (!kids.length) return;
+        const rv = Math.max(0, x.v - kids.reduce((n, y) => n + y.v, 0));
+        restV[x.d.k] = rv;
+        const rr = this.shadowRoot.querySelector(`.row.rest[data-parent="${x.d.k}"]`); if (!rr) return;
+        const max = this._max(x.d), p = Math.max(0, Math.min(1, rv / max));
+        rr.classList.toggle("on", rv > thr);
+        rr.style.setProperty("--p", (p * 100).toFixed(2) + "%");
+        rr.style.setProperty("--lc", levelColor(p));
+        this._tween(rr.querySelector(".val"), x.d.k + "-rest", rv);
+      });
       // groupes : total, ordre, « tous au repos »
       this._c.groups.forEach((g, gi) => {
         const gt = this.shadowRoot.querySelector(`[data-gt="${gi}"]`); if (gt) gt.textContent = this._w(gTot[gi] || 0);
         const box = this.shadowRoot.querySelector(`[data-rows="${gi}"]`); if (!box) return;
-        const its = items.filter((x) => x.d.gi === gi);
+        const its = items.filter((x) => x.d.gi === gi && !x.sub);
         const ai = box.querySelector(`[data-allidle="${gi}"]`);
-        if (ai) ai.hidden = !(this._c.idle === "hide" && its.length && !its.some((x) => x.on));
-        if (this._c.sort === "power") this._reorder(box, [...its].sort((a, b) => b.v - a.v || a.d.di - b.d.di).map((x) => this._rows[x.d.k]));
+        if (ai) ai.hidden = !(this._c.idle === "hide" && its.length && !its.some((x) => x.on || items.some((y) => y.sub && y.on && y.d.parent === x.d.entity)));
+        if (this._c.sort === "power") {
+          // appareils principaux triés ; chacun suivi de ses sous-appareils (triés eux aussi) puis de sa ligne « Reste »
+          const order = [];
+          [...its].sort((a, b) => b.v - a.v || a.d.di - b.d.di).forEach((x) => {
+            order.push(this._rows[x.d.k]);
+            items.filter((y) => y.sub && y.d.parent === x.d.entity).sort((a, b) => b.v - a.v).forEach((y) => order.push(this._rows[y.d.k]));
+            const rr = box.querySelector(`.row.rest[data-parent="${x.d.k}"]`); if (rr) order.push(rr);
+          });
+          this._reorder(box, order.filter(Boolean));
+        }
       });
       // en-tête
       const root = this.shadowRoot;
@@ -280,7 +353,7 @@
         root.getElementById("totsub").textContent = house ? `${this._nf(Math.min(100, (total / house) * 100))} % ${this._t("de la maison")}` : this._t("Total mesuré");
         const share = root.getElementById("share");
         const denom = Math.max(total, house || 0, 1);
-        const segs = items.filter((x) => x.v > thr).sort((a, b) => b.v - a.v);
+        const segs = items.filter((x) => !x.sub && x.v > thr).sort((a, b) => b.v - a.v);
         share.innerHTML = segs.map((x) => `<i style="flex:${x.v / denom};background:${x.d.color}" title="${esc(this._name(x.d))} — ${this._w(x.v)}"></i>`).join("")
           + (house && house > total ? `<i class="rest" style="flex:${(house - total) / denom}" title="${this._t("Non mesuré")} — ${this._w(house - total)}"></i>` : "");
         root.getElementById("top").innerHTML = segs.slice(0, 4).map((x) => `<span><i style="background:${x.d.color}"></i>${esc(this._name(x.d))} <b>${this._w(x.v)}</b></span>`).join("");
@@ -307,6 +380,7 @@
     // tri en direct avec glissement animé des lignes (FLIP)
     _reorder(box, order) {
       const cur = [...box.querySelectorAll(".row")];
+      if (cur.length !== order.length) order = [...order, ...cur.filter((r) => !order.includes(r))];
       if (cur.length === order.length && cur.every((r, i) => r === order[i])) return;
       const anim = this._c.animation !== false && !matchMedia("(prefers-reduced-motion: reduce)").matches;
       const first = anim ? new Map(cur.map((r) => [r, r.getBoundingClientRect().top])) : null;
@@ -395,6 +469,9 @@
     }
 
     _onClick(e) {
+      const swB = e.target.closest("[data-sw]");
+      if (swB) { e.stopPropagation(); return this._toggleSwitch(swB); }
+      if (e.target.closest(".row.rest")) return;
       const b = e.target.closest("[data-act]");
       if (b?.dataset.act === "toggle") {
         const gi = Number(b.dataset.g);
@@ -405,6 +482,22 @@
       }
       const r = e.target.closest(".row");
       if (r) { const d = this._devs().find((x) => x.k === r.dataset.k); if (d) this._openDlg(d); }
+    }
+
+    // bouton marche / arrêt : éteindre demande un second toucher (sauf switch_confirm: false)
+    _toggleSwitch(btn) {
+      const d = this._devs().find((x) => x.k === btn.dataset.sw); if (!d) return;
+      const e = this._switchEntity(d), st = e && this._hass.states[e]; if (!st) return;
+      const on = st.state === "on";
+      if (on && d.switch_confirm !== false && !btn.classList.contains("ask")) {
+        btn.classList.add("ask");
+        clearTimeout(btn._askT); btn._askT = setTimeout(() => btn.classList.remove("ask"), 4000);
+        return;
+      }
+      clearTimeout(btn._askT); btn.classList.remove("ask");
+      const dom = e.split(".")[0];
+      const svc = ["switch", "light", "fan", "input_boolean"].includes(dom) ? dom : "homeassistant";
+      this._hass.callService(svc, on ? "turn_off" : "turn_on", { entity_id: e });
     }
 
     // ───────────── fenêtre graphique d'un appareil ─────────────
@@ -607,6 +700,25 @@
     .val { flex: none; min-width: 58px; text-align: right; font-size: 13.5px; font-weight: 700; color: var(--primary-text-color); font-variant-numeric: tabular-nums; white-space: nowrap; }
     .row:not(.on) .val { color: var(--secondary-text-color); font-weight: 600; }
     .row.na { opacity: .45; }
+    /* sous-appareils (#1) et ligne « Reste » */
+    .row.child { margin-left: 22px; min-height: 38px; }
+    .row.child::before { content: ""; position: absolute; left: -14px; top: -6px; bottom: 50%; width: 9px; border-left: 2px solid color-mix(in srgb, var(--primary-text-color) 22%, transparent); border-bottom: 2px solid color-mix(in srgb, var(--primary-text-color) 22%, transparent); border-bottom-left-radius: 6px; }
+    .row.child { overflow: visible; }
+    .row.child .fill { overflow: hidden; border-radius: var(--lp-r); }
+    .row.child .ic { width: 26px; height: 26px; }
+    .row.child .nm { font-size: 12.5px; }
+    .row.rest { cursor: default; background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-text-color) 8%, transparent); border: 0; }
+    .row.rest .nm { font-style: italic; font-weight: 500; color: var(--secondary-text-color); }
+    .row.rest .fill .grad { opacity: .35; }
+    /* bouton marche / arrêt */
+    .sw { flex: none; position: relative; height: 30px; min-width: 30px; padding: 0 7px; border: 0; border-radius: 15px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+          background: color-mix(in srgb, var(--primary-text-color) 8%, transparent); color: var(--secondary-text-color); transition: background .3s, color .3s, box-shadow .3s; }
+    .sw ha-icon { --mdc-icon-size: 17px; }
+    .sw em { display: none; font-style: normal; font-size: 11.5px; font-weight: 700; white-space: nowrap; }
+    .sw.on { color: #fff; background: var(--dc, var(--primary-color)); box-shadow: 0 0 10px -2px var(--dc, var(--primary-color)); }
+    .sw.ask { background: #e5484d; color: #fff; box-shadow: 0 0 10px -2px #e5484d; } .sw.ask em { display: inline; }
+    .sw:disabled { opacity: .35; cursor: not-allowed; }
+    .sw:hover:not(:disabled) { filter: brightness(1.15); }
     .idle-dim .row:not(.on) { opacity: .55; }
     .idle-hide .row:not(.on) { display: none; }
     /* fenêtre graphique */
@@ -681,10 +793,13 @@
     _emit(rebuild) {
       const cfg = { ...this._c, groups: this._c.groups.map((g) => {
         const o = {}; if (g.name) o.name = g.name; if (g.icon) o.icon = g.icon;
-        o.devices = g.devices.filter((d) => d.entity).map((d) => { const x = {}; for (const k of ["entity", "name", "icon", "max", "energy", "color"]) if (d[k] !== undefined && d[k] !== null && d[k] !== "") x[k] = d[k]; return x; });
+        o.devices = g.devices.filter((d) => d.entity).map((d) => { const x = {}; for (const k of ["entity", "name", "icon", "max", "energy", "color", "parent", "show_switch", "switch", "switch_confirm"]) if (d[k] !== undefined && d[k] !== null && d[k] !== "" && d[k] !== false) x[k] = d[k];
+          if (hasSw(d) && d.switch_confirm === false) x.switch_confirm = false; else delete x.switch_confirm;
+          if (!hasSw(d)) { delete x.switch; delete x.show_switch; } else if (x.switch) delete x.show_switch;
+          return x; });
         return o;
       }) };
-      const DEF = { sort: "power", idle: "show", idle_threshold: 2, style: "fill", color: "gradient", columns: "auto", show_total: true, show_sparkline: true, show_energy: true, sparkline_hours: 3, animation: true };
+      const DEF = { sort: "power", idle: "show", idle_threshold: 2, style: "fill", color: "gradient", columns: "auto", show_total: true, show_sparkline: true, show_energy: true, show_rest: true, sparkline_hours: 3, animation: true };
       for (const [k, v] of Object.entries(DEF)) if (cfg[k] === v || cfg[k] === undefined || cfg[k] === "") delete cfg[k];
       if (!cfg.language) delete cfg.language;
       if (!cfg.total_entity) delete cfg.total_entity;
@@ -696,7 +811,8 @@
       const L = { title: "Titre", language: "Langue", sort: "Tri", idle: "Appareils au repos", idle_threshold: "Seuil de repos (W)", style: "Style des lignes", color: "Couleurs", columns: "Colonnes",
         show_total: "Afficher le total", show_sparkline: "Mini-courbes", show_energy: "kWh du jour", sparkline_hours: "Heures des mini-courbes", total_entity: "Consommation totale de la maison (facultatif)",
         animation: "Animations", name: "Nom affiché", gname: "Nom du groupe", icon: "Icône", entity: "Capteur de puissance (W)", max: "Puissance max (W, auto si vide)", energy: "Compteur d'énergie (auto si vide)",
-        color_d: "Couleur (facultatif)", group: "Groupe" };
+        color_d: "Couleur (facultatif)", group: "Groupe", parent: "Inclus dans (sous-appareil de)", show_switch: "Bouton marche / arrêt", switch: "Interrupteur (auto si vide)",
+        switch_confirm: "Confirmer avant d'éteindre", show_rest: "Ligne « Reste non détaillé » sous les appareils parents" };
       return L[s.name] ? this._t(L[s.name]) : s.title || s.name;
     }
     _build() {
@@ -769,6 +885,7 @@
           { type: "grid", name: "", schema: [
             { name: "show_total", selector: { boolean: {} } }, { name: "show_sparkline", selector: { boolean: {} } },
             { name: "show_energy", selector: { boolean: {} } }, { name: "animation", selector: { boolean: {} } },
+            { name: "show_rest", selector: { boolean: {} } },
           ] },
           { name: "sparkline_hours", selector: { number: { mode: "box", min: 1, max: 48, unit_of_measurement: "h" } } },
           { name: "total_entity", selector: { entity: { domain: "sensor", device_class: "power" } } },
@@ -777,7 +894,7 @@
       ];
       const c = this._c;
       top.data = { title: c.title ?? t("Consommations en direct"), sort: c.sort || "power", idle: c.idle || "show", style: c.style || "fill", color: c.color || "gradient", columns: String(c.columns || "auto"),
-        idle_threshold: c.idle_threshold ?? 2, show_total: c.show_total !== false, show_sparkline: c.show_sparkline !== false, show_energy: c.show_energy !== false, animation: c.animation !== false,
+        idle_threshold: c.idle_threshold ?? 2, show_total: c.show_total !== false, show_sparkline: c.show_sparkline !== false, show_energy: c.show_energy !== false, animation: c.animation !== false, show_rest: c.show_rest !== false,
         sparkline_hours: c.sparkline_hours ?? 3, total_entity: c.total_entity || "", language: c.language || "" };
       top.addEventListener("value-changed", (e) => {
         e.stopPropagation();
@@ -802,16 +919,22 @@
           { type: "grid", name: "", schema: [{ name: "name", selector: { text: {} } }, { name: "icon", selector: { icon: {} } }] },
           { type: "grid", name: "", schema: [{ name: "max", selector: { number: { mode: "box", min: 0, step: "any", unit_of_measurement: "W" } } }, { name: "color", selector: { text: {} } }] },
           { name: "energy", selector: { entity: { domain: "sensor", device_class: "energy" } } },
+          { name: "parent", selector: { select: { mode: "dropdown", options: [{ value: "", label: t("Aucun (appareil principal)") },
+            ...this._c.groups.flatMap((x) => x.devices).filter((o) => o.entity && o.entity !== d.entity && !o.parent && !this._c.groups.some((gg) => gg.devices.some((z) => z.parent === d.entity && z.entity === o.entity)))
+              .map((o) => ({ value: o.entity, label: o.name || this._hass.states[o.entity]?.attributes?.friendly_name || o.entity }))] } } },
+          { type: "grid", name: "", schema: [{ name: "show_switch", selector: { boolean: {} } }, ...(hasSw(d) ? [{ name: "switch_confirm", selector: { boolean: {} } }] : [])] },
+          ...(hasSw(d) ? [{ name: "switch", selector: { entity: { domain: ["switch", "light", "fan", "input_boolean"] } } }] : []),
           ...(this._c.groups.length > 1 ? [{ name: "group", selector: { select: { mode: "dropdown", options: this._c.groups.map((x, i) => ({ value: String(i), label: x.name || `${t("Groupe")} ${i + 1}` })) } } }] : []),
         ];
-        f.data = { ...d, group: String(gi) };
+        f.data = { ...d, parent: d.parent || "", show_switch: hasSw(d), switch_confirm: d.switch_confirm !== false, group: String(gi) };
         f.addEventListener("value-changed", (e) => {
           e.stopPropagation();
           const v = { ...e.detail.value }; const ng = Number(v.group ?? gi); delete v.group;
           const entityChanged = v.entity !== d.entity;
-          for (const k of ["entity", "name", "icon", "max", "energy", "color"]) d[k] = v[k];
+          const swChanged = !!v.show_switch !== hasSw(d);
+          for (const k of ["entity", "name", "icon", "max", "energy", "color", "parent", "show_switch", "switch", "switch_confirm"]) d[k] = v[k];
           if (ng !== gi) { this._c.groups[gi].devices.splice(di, 1); this._c.groups[ng].devices.push(d); this._openG = ng; this._openD = `${ng}-${this._c.groups[ng].devices.length - 1}`; this._emit(true); return; }
-          this._emit(entityChanged);
+          this._emit(entityChanged || swChanged);
         });
       });
       const $ = (s) => this.shadowRoot.querySelectorAll(s);

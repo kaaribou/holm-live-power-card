@@ -19,9 +19,17 @@ Fini les dizaines de `button-card` copiées-collées : une seule carte affiche t
 - 📈 **Mini-courbe** des dernières heures et **kWh du jour** pour chaque appareil (compteur d'énergie trouvé tout seul sur le même appareil).
 - 🎯 **Maximum automatique** : sans valeur saisie, l'échelle s'adapte au pic des 7 derniers jours.
 - 📉 **Un graphique pour chaque appareil** : toucher une ligne ouvre une fenêtre avec la courbe de puissance sur 6 h, 24 h, 48 h ou 7 jours, les périodes de marche, et les tuiles Actuelle, Min, Max, Moyenne, Énergie et En marche.
-- 🛡️ **Lecture seule** : la carte ne permet pas d'allumer ou d'éteindre un appareil, impossible de couper un matériel par erreur.
+- 🌳 **Sous-appareils** : une prise qui mesure un ensemble et les appareils qu'il contient, sans double comptage, avec la part non détaillée.
+- ⏻ **Bouton marche / arrêt** facultatif par appareil, avec confirmation avant d'éteindre. Désactivé par défaut : la carte reste en lecture seule tant que vous ne l'activez pas.
 - ✏️ **Éditeur visuel complet** : groupes et appareils (ajouter, réordonner, déplacer d'un groupe à l'autre), affichage, couleurs, et **import des appareils du tableau Énergie** en un clic.
 - 🌍 **8 langues**, thème clair et sombre, animations coupées si le système demande moins de mouvement.
+
+### 🆕 Nouveautés de la 1.2.0
+
+- 🌳 **Sous-appareils sans double comptage** ([#1](https://github.com/kaaribou/holm-live-power-card/issues/1), idée de MilesTEG1) : une prise qui mesure toute une baie, un meuble TV ou un tableau divisionnaire peut avoir ses « sous-appareils » mesurés à part. Ils s'affichent en retrait sous elle, ne sont plus comptés deux fois dans le total, et une ligne **Reste non détaillé** montre ce qui n'est pas mesuré individuellement. Voir [Sous-appareils](#sous-appareils).
+- ⏻ **Bouton marche / arrêt** par appareil, désactivé par défaut, avec confirmation avant d'éteindre. Voir [Bouton marche / arrêt](#bouton-marche--arrêt).
+
+![Sous-appareils, ligne « Reste » et boutons marche / arrêt](docs/images/sous-appareils.png)
 
 | La carte | Sur mobile | L'éditeur |
 |---|---|---|
@@ -42,7 +50,7 @@ Fini les dizaines de `button-card` copiées-collées : une seule carte affiche t
 ### Manuelle
 
 1. Copiez `holm-live-power-card.js` dans `config/www/community/holm-cards/`.
-2. Paramètres → Tableaux de bord → ⋮ → **Ressources** → ajoutez `/local/community/holm-cards/holm-live-power-card.js?v=1.1.0`, type **Module JavaScript**.
+2. Paramètres → Tableaux de bord → ⋮ → **Ressources** → ajoutez `/local/community/holm-cards/holm-live-power-card.js?v=1.2.0`, type **Module JavaScript**.
 3. Rechargez la page (Ctrl + F5).
 
 ## Configuration
@@ -87,6 +95,7 @@ groups:
 | `sparkline_hours` | Durée des mini-courbes (h) | `3` |
 | `show_energy` | kWh du jour | `true` |
 | `total_entity` | Consommation totale de la maison (W) : affiche la part mesurée et le « non mesuré » | — |
+| `show_rest` | Ligne « Reste non détaillé » sous un appareil qui a des sous-appareils | `true` |
 | `animation` | Animations | `true` |
 
 ### Options d'un appareil
@@ -98,6 +107,49 @@ groups:
 | `max` | Puissance maximale pour l'échelle ; sinon le pic des 7 derniers jours |
 | `energy` | Compteur d'énergie pour les kWh du jour ; sinon cherché sur le même appareil |
 | `color` | Couleur de l'appareil dans la barre de répartition |
+| `parent` | Capteur de l'appareil qui contient celui-ci : il s'affiche en retrait et n'est pas compté deux fois (voir [Sous-appareils](#sous-appareils)) |
+| `show_switch` | Bouton marche / arrêt sur la ligne (voir [Bouton marche / arrêt](#bouton-marche--arrêt)) |
+| `switch` | Interrupteur piloté par le bouton ; sinon celui du même appareil |
+| `switch_confirm` | `false` pour éteindre sans confirmation (par défaut : confirmation) |
+
+## Sous-appareils
+
+Quand une prise mesure un ensemble (une baie informatique, un meuble TV, une multiprise de cuisine…) et que certains appareils de cet ensemble ont aussi leur propre prise, choisissez pour chacun d'eux **Inclus dans (sous-appareil de)** dans l'éditeur (option `parent`).
+
+```yaml
+devices:
+  - entity: sensor.prise_baie_power        # mesure toute la baie : 160 W
+    name: Baie informatique
+  - entity: sensor.prise_serveur_1_power   # 40 W
+    name: Serveur 1
+    parent: sensor.prise_baie_power
+  - entity: sensor.prise_serveur_2_power   # 15 W
+    name: Serveur 2
+    parent: sensor.prise_baie_power
+```
+
+| Élément | À quoi il sert |
+|---|---|
+| **Ligne de l'appareil parent** | La puissance totale de l'ensemble (160 W). C'est elle qui compte dans le total, la barre de répartition et les plus gros consommateurs. |
+| **Lignes en retrait, reliées par un trait ↳** | Les sous-appareils (40 W, 15 W) : leur puissance, leur mini-courbe, leurs kWh du jour et leur graphique au toucher, comme les autres, mais ils ne sont **pas ajoutés une seconde fois** au total. |
+| **Ligne « Reste non détaillé »** (en italique) | Ce que le parent consomme en plus de ses sous-appareils : 160 − 40 − 15 = 105 W (réseau, routeur, onduleur…). Elle se masque avec l'option `show_rest: false`. Elle n'ouvre pas de graphique. |
+
+- Le tri en direct range les appareils principaux ; chacun garde ses sous-appareils (triés eux aussi) et sa ligne « Reste » juste en dessous.
+- Un sous-appareil s'affiche toujours sous son parent, même s'il a été ajouté dans un autre groupe.
+- Un seul niveau : un sous-appareil ne peut pas avoir lui-même de sous-appareils.
+
+## Bouton marche / arrêt
+
+Activez **Bouton marche / arrêt** dans les réglages d'un appareil (option `show_switch`) pour pouvoir l'allumer ou l'éteindre depuis la carte.
+
+| Élément | À quoi il sert |
+|---|---|
+| **Bouton ⏻ à droite de la ligne** | Allume ou éteint l'interrupteur de l'appareil. **Coloré** (couleur de l'appareil) quand il est allumé, **gris** quand il est éteint, **pâle** et inactif quand l'interrupteur est indisponible. |
+| **« Éteindre ? » en rouge** | Pour éteindre, un premier toucher demande confirmation : touchez de nouveau dans les 4 secondes. Sans second toucher, rien ne se passe. Pour éteindre d'un seul toucher, décochez **Confirmer avant d'éteindre** (`switch_confirm: false`). Allumer se fait toujours d'un seul toucher. |
+
+- **Interrupteur** (`switch`) : laissé vide, la carte prend l'interrupteur rattaché au même appareil que le capteur de puissance (le cas de la plupart des prises connectées). Vous pouvez aussi choisir n'importe quel `switch`, `light`, `fan` ou `input_boolean`.
+- Indiquer un `switch` en YAML suffit à afficher le bouton.
+- Le bouton est désactivé par défaut : pensez à ne pas l'activer sur un congélateur ou un serveur qui ne doit jamais être coupé.
 
 ## Comment ça marche
 
@@ -110,6 +162,6 @@ groups:
 
 Fait partie de **HOLM — Home Orchestration & Living Management** : la gestion et l'orchestration intelligente de la maison.
 
-Les autres projets : [Volets HOLM](https://github.com/kaaribou/volets-holm) · [Climat HOLM](https://github.com/kaaribou/climat-holm) · [Carburant HOLM](https://github.com/kaaribou/carburant-holm) · [Commandes à la maison HOLM](https://github.com/kaaribou/commandes-holm) · [HOLM LaMetric](https://github.com/kaaribou/lametric-holm) · [HOLM My Menu](https://github.com/kaaribou/holm-mymenu) · [HOLM Lektrico](https://github.com/kaaribou/lektrico-holm) · [HOLM GitHub](https://github.com/kaaribou/github-holm) · [HOLM Solar Optimizer Card](https://github.com/kaaribou/holm-solar-optimizer-card) · [HOLM Navbar Card](https://github.com/kaaribou/holm-navbar-card) · [HOLM Climate Card](https://github.com/kaaribou/climate-card-holm) · [HOLM Music Card](https://github.com/kaaribou/holm-music-card) · [HOLM Sentinel Card](https://github.com/kaaribou/holm-sentinel-card) · [HOLM Security Card](https://github.com/kaaribou/holm-security-card) · [HOLM Recordings Card](https://github.com/kaaribou/holm-recordings-card) · [HOLM Covers Card](https://github.com/kaaribou/holm-covers-card) · [HOLM Runtime Card](https://github.com/kaaribou/holm-runtime-card) · [HOLM Power Flow Card](https://github.com/kaaribou/holm-power-flow-card) · [HOLM Energy Cards](https://github.com/kaaribou/holm-energy-cards) · [HOLM Radiator Card](https://github.com/kaaribou/holm-radiator-card) · [HOLM Floor Card](https://github.com/kaaribou/holm-floor-card) · [HOLM Ecojoko Card](https://github.com/kaaribou/holm-ecojoko-card) · [HOLM Smoke Card](https://github.com/kaaribou/holm-smoke-card) · [HOLM BG Card](https://github.com/kaaribou/holm-bg-card).
+Les autres projets : [Volets HOLM](https://github.com/kaaribou/volets-holm) · [Climat HOLM](https://github.com/kaaribou/climat-holm) · [Carburant HOLM](https://github.com/kaaribou/carburant-holm) · [Commandes à la maison HOLM](https://github.com/kaaribou/commandes-holm) · [HOLM LaMetric](https://github.com/kaaribou/lametric-holm) · [HOLM My Menu](https://github.com/kaaribou/holm-mymenu) · [HOLM Lektrico](https://github.com/kaaribou/lektrico-holm) · [HOLM GitHub](https://github.com/kaaribou/github-holm) · [HOLM Cars](https://github.com/kaaribou/holm-cars) · [HOLM HP/HC](https://github.com/kaaribou/holm-tarif) · [HOLM Navbar Card](https://github.com/kaaribou/holm-navbar-card) · [HOLM Climate Card](https://github.com/kaaribou/climate-card-holm) · [HOLM Music Card](https://github.com/kaaribou/holm-music-card) · [HOLM Sentinel Card](https://github.com/kaaribou/holm-sentinel-card) · [HOLM Security Card](https://github.com/kaaribou/holm-security-card) · [HOLM Recordings Card](https://github.com/kaaribou/holm-recordings-card) · [HOLM Covers Card](https://github.com/kaaribou/holm-covers-card) · [HOLM Runtime Card](https://github.com/kaaribou/holm-runtime-card) · [HOLM Power Flow Card](https://github.com/kaaribou/holm-power-flow-card) · [HOLM Energy Cards](https://github.com/kaaribou/holm-energy-cards) · [HOLM Radiator Card](https://github.com/kaaribou/holm-radiator-card) · [HOLM Floor Card](https://github.com/kaaribou/holm-floor-card) · [HOLM Ecojoko Card](https://github.com/kaaribou/holm-ecojoko-card) · [HOLM Smoke Card](https://github.com/kaaribou/holm-smoke-card) · [HOLM Family Card](https://github.com/kaaribou/holm-family-card) · [HOLM Solar Optimizer Card](https://github.com/kaaribou/holm-solar-optimizer-card) · [HOLM Govee Light Card](https://github.com/kaaribou/holm-govee-light-card) · [HOLM Leapmotor Card](https://github.com/kaaribou/holm-leapmotor-card). · [HOLM Poubelles](https://github.com/kaaribou/holm-bins) · [HOLM FX](https://github.com/kaaribou/holm-fx-card) · [HOLM Theme Editor](https://github.com/kaaribou/holm-theme)
 
 Licence MIT · [☕ Offrir une bière](https://paypal.me/kaaribou)
